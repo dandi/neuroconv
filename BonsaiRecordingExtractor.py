@@ -78,8 +78,6 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             self.dtype = self.get_bin_dat_dtype()
         if self.dtype not in ['uint16', 'float32']:
             raise ValueError(f"dtype {self.dtype} not valid. Choose 'uint16' or 'float32'")
-
-        # attributes that can be added later
         if time is not None or time_file is not None:
             self.add_session_start_time(time, time_file)
     
@@ -87,8 +85,8 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         super().__init__(traces_file, self.sampling_frequency, self.numchan, self.dtype, **kwargs)
 
         # compile metadata
-        self.metadata = dict()
-        self.metadata['devices'] = self.add_devices()
+        self.create_metadata()
+        #self.metadata['devices'] = self.add_devices()
 
 
     def add_session_start_time(self, time=None, file=None):
@@ -129,7 +127,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         self.session_start_time = dt
 
 
-    def add_devices(self, ephys_device ='rhd', file=None):
+    def extract_device_metadata(self, ephys_device ='rhd', file=None):
         """ 
         Add device information from Bonsai XML metadata 
 
@@ -141,6 +139,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             Path of XML file to grab metadata from relative to self._bonsai_dir
             If None, defaults to self._metadata_file
         """
+        # clean file
         if file is None: 
             soup = self.nodes  # grab all
         else:
@@ -150,25 +149,22 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             for tag in soup.find_all('expression', {'xsi:type': "Disable"}):
                 tag.decompose()
 
+        # ecephys device only (be consistent with NWB extractor metadata)
+        self.metadata['Ecephys']['Device'] = []  
+        # all devices, including ephys device. 
+        self.metadata['Device'] = []
 
-        devices = dict()
+
         for d in soup.find_all(re.compile('.*:deviceindex')):
-            d_id = find_soup(d,name=re.compile('.*:selectedindex'))
-            d_id = int(d_id.get_text())
+            device_md = dict()
             
             # device name is in the parent tag  e.g. <Combinator xsi:type="q1:InfoDevice">
-            d_name = list(d.parent.attrs.values())[0].split(':')[-1]  
-            d_name = f'{d_name}{d_id}' 
-            
-            if d_name not in devices:
-                devices[d_name] = dict()
-                #TODO raise Exception('device already in index')
-            
-            if re.search(ephys_device, d_name, re.IGNORECASE) is not None:
-                devices[d_name]['is_ephys_device'] = True
-            else:
-                devices[d_name]['is_ephys_device'] = False
-                
+            device_md['name'] = list(d.parent.attrs.values())[0].split(':')[-1]  
+            d_id = find_soup(d,name=re.compile('.*:selectedindex'))
+            device_md['id'] = int(d_id.get_text())
+
+            #TODO raise Exception('device already in index')    
+            # loop over attribute information in a device
             for s in d.next_siblings:
                 if s is not None and s.name:
                     attr_name = d.next_sibling.name.split(':')[-1]
@@ -178,15 +174,21 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                         text = True
                     elif text == 'false':
                         text = False
-                    devices[d_name][attr_name] = text
+                    device_md[attr_name] = text
                 d = d.next_sibling
-        return(devices)
+
+            if re.search(ephys_device, device_md['name'], re.IGNORECASE) is not None:
+                self.metadata['Ecephys']['Device'].append(device_md) 
+                device_md['ephys_device'] = True
+            else:
+                device_md['ephys_device'] = False
+            
+            self.metadata['Device'].append(device_md)
 
 
     def get_all_valid_files(self):
         # filter out empty files, grab metadata for each file
         # distinguish between inputs and outputs?
-
 
         # binary files
         bin_md = {}
@@ -205,21 +207,20 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         return(bin_md)
 
 
-    # TODO - not hard code
+    # TODO - not hard code?
     def create_metadata(self, **kwargs): 
-        metadata = dict()
-        metadata['Ecephys'] = {
+        self.metadata = dict()
+        self.metadata['Ecephys'] = {
             'name': 'ephys_data',
             'data': self.get_traces(), # TODO add args
              #electrodes=electrode_table_region,
-            'starting_time': self.session_start_time,
+            #'starting_time': self.add_session_start_time(),
             'sampling_frequency': self.get_sampling_frequency(),
             'comments': 'Generated from SpikeInterface::BonsaiRecordingExtractor',
             'description': 'acquisition_description',
          }
-
-        metadata['Devices'] = self.add_devices()
-        return(metadata)
+        # add self.metadata['Ecephys']['Device'] and self.metadata['Devices']
+        self.extract_device_metadata()
         
 
     # TODO: make file or device specific?
