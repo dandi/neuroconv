@@ -1,11 +1,11 @@
 from spikeextractors import RecordingExtractor, BinDatRecordingExtractor
 from bs4 import BeautifulSoup
 from pathlib import Path
+from datetime import datetime
 import dateutil.parser
 import lxml
 import csv
 import re
-
 
 
 def find_soup(soup, **kwargs):
@@ -17,16 +17,18 @@ def find_soup(soup, **kwargs):
     soup : BeautifulSoup object 
     kwargs : parameters to pass into find
     """
-    if soup.find(**kwargs) is None: 
-        raise ValueError(f"Cannot find text matching {kwargs} in file. Check if specified file path is correct")
+    if soup.find(**kwargs) is None:
+        raise ValueError(
+            f"Cannot find text matching {kwargs} in file. Check if specified file path is correct"
+        )
     return soup.find(**kwargs)
 
 
 class BonsaiRecordingExtractor(BinDatRecordingExtractor):
-    extractor_name = 'BonsaiRecording'
+    extractor_name = "BonsaiRecording"
     has_default_locations = False
     is_writable = False
-    mode = 'folder'
+    mode = "folder"
     installation_mesg = "For parsing metadata from Bonsai XML outputs"
 
     """
@@ -35,9 +37,17 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
     """
     # TODO
 
-    def __init__(self, bonsai_dir, metadata_file, traces_file, 
-                 sampling_frequency=None, numchan=None, dtype=None,
-                 time=None, time_file=None, **kwargs):
+    def __init__(
+        self,
+        bonsai_dir,
+        metadata_file,
+        traces_file,
+        sampling_frequency=None,
+        numchan=None,
+        dtype=None,
+        time=None,
+        **kwargs,
+    ):
         """
 
         Parameters
@@ -60,14 +70,14 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         self._bonsai_dir = str(Path(bonsai_dir).absolute())
         self._metadata_file = str(Path(self._bonsai_dir) / metadata_file)
 
-        with open(self._metadata_file, 'r') as f:
-            soup = BeautifulSoup(f, 'lxml')
+        with open(self._metadata_file, "r") as f:
+            soup = BeautifulSoup(f, "lxml")
         # remove disabled steps
-        for tag in soup.find_all('expression', {'xsi:type': "Disable"}):
+        for tag in soup.find_all("expression", {"xsi:type": "Disable"}):
             tag.decompose()
 
-        self.nodes = find_soup(soup, name='nodes')  # workflow information
-        self.edges = find_soup(soup, name='edges')  # how channels connect to each other
+        self.nodes = find_soup(soup, name="nodes")  # workflow information
+        self.edges = find_soup(soup, name="edges")  # how channels connect to each other
 
         # attributes set at init
         if sampling_frequency is None:
@@ -76,20 +86,22 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             self.numchan = self.get_num_channels()
         if dtype is None:
             self.dtype = self.get_bin_dat_dtype()
-        if self.dtype not in ['uint16', 'float32']:
-            raise ValueError(f"dtype {self.dtype} not valid. Choose 'uint16' or 'float32'")
-        if time is not None or time_file is not None:
-            self.add_session_start_time(time, time_file)
-    
+        if self.dtype not in ["uint16", "float32"]:
+            raise ValueError(
+                f"dtype {self.dtype} not valid. Choose 'uint16' or 'float32'"
+            )
+        self.session_start_time = self.add_session_start_time(time)
+
         traces_file = str(Path(self._bonsai_dir) / traces_file)
-        super().__init__(traces_file, self.sampling_frequency, self.numchan, self.dtype, **kwargs)
+        super().__init__(
+            traces_file, self.sampling_frequency, self.numchan, self.dtype, **kwargs
+        )
 
         # compile metadata
         self.create_metadata()
-        #self.metadata['devices'] = self.add_devices()
+        # self.metadata['devices'] = self.add_devices()
 
-
-    def add_session_start_time(self, time=None, file=None):
+    def add_session_start_time(self, time=None):
         """ 
         Specifc session start time or return first timestamp found in a csv file.
         Needs to specific either `time` or `file`.  
@@ -99,35 +111,29 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         time : datetime object or str that can be converted to datetime object
         file : csv file path  
         """
-        if time is None and file is None:
-            raise Exception('Specify either `time` or `time_file`')
+        # not initialized
+        if time is None:
+            return datetime.now().isoformat()
 
-        dt = None
-        if time:
-            try: # strings
-                dt = dateutil.parser.parse(time).isoformat()
-            except parser.ParserError:
-                return time.isoformat()
-            except Exception:
-                raise
-
-        if file and dt is not None:
-            fp = str(Path(self._bonsai_dir) / file)
+        try:
+            self.session_start_time = dateutil.parser.parse(time).isoformat()
+            return self.session_start_time  # as datetime object
+        except:
+            fp = str(Path(self._bonsai_dir) / time)  # file path
             with open(fp) as f:
                 reader = csv.reader(f)
                 for row in reader:
                     for col in row:
-                        try: # returns first time stamp found
-                            dt = dateutil.parser.parse(col).isoformat() 
-                            break
+                        try:  # returns first time stamp found
+                            self.session_start_time = dateutil.parser.parse(
+                                col
+                            ).isoformat()
+                            return self.session_start_time
                         except Exception:
                             continue
-                raise ValueError(f'Timestamp not found in file: {file}')
+                raise ValueError(f"Timestamp not found in file: {time}")
 
-        self.session_start_time = dt
-
-
-    def extract_device_metadata(self, ephys_device ='rhd', file=None):
+    def extract_device_metadata(self, ephys_device="rhd", file=None):
         """ 
         Add device information from Bonsai XML metadata 
 
@@ -140,51 +146,49 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             If None, defaults to self._metadata_file
         """
         # clean file
-        if file is None: 
+        if file is None:
             soup = self.nodes  # grab all
         else:
-            with open(str(Path(self._bonsai_dir) / file), 'r') as f:
-                soup = BeautifulSoup(f, 'lxml')
+            with open(str(Path(self._bonsai_dir) / file), "r") as f:
+                soup = BeautifulSoup(f, "lxml")
             # remove disabled steps
-            for tag in soup.find_all('expression', {'xsi:type': "Disable"}):
+            for tag in soup.find_all("expression", {"xsi:type": "Disable"}):
                 tag.decompose()
 
         # ecephys device only (be consistent with NWB extractor metadata)
-        self.metadata['Ecephys']['Device'] = []  
-        # all devices, including ephys device. 
-        self.metadata['Device'] = []
+        self.metadata["Ecephys"]["Device"] = []
+        # all devices, including ephys device.
+        self.metadata["Device"] = []
 
-
-        for d in soup.find_all(re.compile('.*:deviceindex')):
+        for d in soup.find_all(re.compile(".*:deviceindex")):
             device_md = dict()
-            
-            # device name is in the parent tag  e.g. <Combinator xsi:type="q1:InfoDevice">
-            device_md['name'] = list(d.parent.attrs.values())[0].split(':')[-1]  
-            d_id = find_soup(d,name=re.compile('.*:selectedindex'))
-            device_md['id'] = int(d_id.get_text())
 
-            #TODO raise Exception('device already in index')    
+            # device name is in the parent tag  e.g. <Combinator xsi:type="q1:InfoDevice">
+            device_md["name"] = list(d.parent.attrs.values())[0].split(":")[-1]
+            d_id = find_soup(d, name=re.compile(".*:selectedindex"))
+            device_md["id"] = int(d_id.get_text())
+
+            # TODO raise Exception('device already in index')
             # loop over attribute information in a device
             for s in d.next_siblings:
                 if s is not None and s.name:
-                    attr_name = d.next_sibling.name.split(':')[-1]
+                    attr_name = d.next_sibling.name.split(":")[-1]
                     text = d.next_sibling.text
                     # convert strings to bool when necessary
-                    if text == 'true':
+                    if text == "true":
                         text = True
-                    elif text == 'false':
+                    elif text == "false":
                         text = False
                     device_md[attr_name] = text
                 d = d.next_sibling
 
-            if re.search(ephys_device, device_md['name'], re.IGNORECASE) is not None:
-                self.metadata['Ecephys']['Device'].append(device_md) 
-                device_md['ephys_device'] = True
+            if re.search(ephys_device, device_md["name"], re.IGNORECASE) is not None:
+                self.metadata["Ecephys"]["Device"].append(device_md)
+                device_md["ephys_device"] = True
             else:
-                device_md['ephys_device'] = False
-            
-            self.metadata['Device'].append(device_md)
+                device_md["ephys_device"] = False
 
+            self.metadata["Device"].append(device_md)
 
     def get_all_valid_files(self):
         # filter out empty files, grab metadata for each file
@@ -192,39 +196,39 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
         # binary files
         bin_md = {}
-        for s in soup.find_all('combinator', {'xsi:type': re.compile('.*matrixwriter', re.IGNORECASE)}):
+        for s in soup.find_all(
+            "combinator", {"xsi:type": re.compile(".*matrixwriter", re.IGNORECASE)}
+        ):
             file_md = {}
             for attr in s.children:
                 if attr.name is not None:
-                    file_md[attr.name.split(':')[-1]] = attr.string
-            if 'path' in file_md:
-                if 'suffix' in file_md:
-                    file_md['prefix'], file_md['ext'] = file_md['path'].rsplit('.')
-            
-            for f in all_files:
-                if f.startswith(file_md['prefix']) and f.endswith(file_md['ext']):
-                    bin_md[f] = file_md
-        return(bin_md)
+                    file_md[attr.name.split(":")[-1]] = attr.string
+            if "path" in file_md:
+                if "suffix" in file_md:
+                    file_md["prefix"], file_md["ext"] = file_md["path"].rsplit(".")
 
+            for f in all_files:
+                if f.startswith(file_md["prefix"]) and f.endswith(file_md["ext"]):
+                    bin_md[f] = file_md
+        return bin_md
 
     # TODO - not hard code?
-    def create_metadata(self, **kwargs): 
+    def create_metadata(self, **kwargs):
         self.metadata = dict()
-        self.metadata['Ecephys'] = {
-            'name': 'ephys_data',
-            'data': self.get_traces(), # TODO add args
-             #electrodes=electrode_table_region,
-            #'starting_time': self.add_session_start_time(),
-            'sampling_frequency': self.get_sampling_frequency(),
-            'comments': 'Generated from SpikeInterface::BonsaiRecordingExtractor',
-            'description': 'acquisition_description',
-         }
+        self.metadata["Ecephys"] = {
+            "name": "ephys_data",
+            "data": self.get_traces(),  # TODO add args
+            # electrodes=electrode_table_region,
+            "starting_time": self.add_session_start_time(),
+            "sampling_frequency": self.get_sampling_frequency(),
+            "comments": "Generated from SpikeInterface::BonsaiRecordingExtractor",
+            "description": "acquisition_description",
+        }
         # add self.metadata['Ecephys']['Device'] and self.metadata['Devices']
         self.extract_device_metadata()
-        
 
     # TODO: make file or device specific?
-    def get_bin_dat_dtype(self): 
+    def get_bin_dat_dtype(self):
         """ 
         Determine data type of binary data that contains time series.
 
@@ -232,18 +236,16 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         applies the 0.195 scale factor for spike detection, dtype is `float32`
 
         """
-        pat = re.compile(r'.*adcscale', re.IGNORECASE)
+        pat = re.compile(r".*adcscale", re.IGNORECASE)
         try:
-            adc = find_soup(self.nodes, name='combinator', attrs={'xsi:type': pat})
+            adc = find_soup(self.nodes, name="combinator", attrs={"xsi:type": pat})
         except ValueError:  # no scaling in workflow
-            return('uint16')
-        return('float32')
+            return "uint16"
+        return "float32"
 
-
-
-    # TODO: check all instances of channel ?  
+    # TODO: check all instances of channel ?
     # QUESTION: how to figure out channel count when it's not speciftied
-    def get_num_channels(self, device=None): 
+    def get_num_channels(self, device=None):
         """ 
         Return number of channels in int 
 
@@ -251,10 +253,9 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         --------
         This assumes channel counts are in tag 'dsp:channelcount'
         """
-        text = find_soup(self.nodes, name=re.compile(r'.*channelcount$'))
+        text = find_soup(self.nodes, name=re.compile(r".*channelcount$"))
         numchan = int(text.get_text())
         return numchan
-
 
     # TODO: get device names from <q1:DeviceIndex> and id # from <q1:SelectedIndex>
     def get_channel_ids(self):
@@ -262,8 +263,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         channel_ids = range(self.get_num_channels())
         return channel_ids
 
-
-    def get_sampling_frequency(self, device='RHD', index=None):
+    def get_sampling_frequency(self, device="RHD", index=None):
         """ 
         Return sampling rate of recordings in Hertz 
 
@@ -273,13 +273,11 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             Name of device. Case insensitive, supports regular expression.
 
         """
-        pat = re.compile(r'.*' + device + '.*', re.IGNORECASE)
-        device_info = self.nodes.find_all('combinator', {'xsi:type': pat})
+        pat = re.compile(r".*" + device + ".*", re.IGNORECASE)
+        device_info = self.nodes.find_all("combinator", {"xsi:type": pat})
         if len(device_info) != 1:
-            raise Exception('More than one RHD device, revise code')
+            raise Exception("More than one RHD device, revise code")
 
-        sf = find_soup(device_info[0], name=re.compile(r'.*samplerate$')).get_text()
-        sf = re.findall(r'\d+', sf)[0]  # samplerate can be a string
-        return float(sf)  
-
-
+        sf = find_soup(device_info[0], name=re.compile(r".*samplerate$")).get_text()
+        sf = re.findall(r"\d+", sf)[0]  # samplerate can be a string
+        return float(sf)
