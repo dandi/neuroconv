@@ -6,6 +6,7 @@ import dateutil.parser
 import lxml
 import csv
 import re
+from pandas import read_csv
 
 
 def find_soup(soup, **kwargs):
@@ -329,3 +330,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
         self.get_device_metadata()
         self.get_file_metadata()
+
+    
+
+
