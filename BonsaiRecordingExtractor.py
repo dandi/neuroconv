@@ -273,12 +273,13 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
                 if "filename" in md:
                     md["file_pattern"] = md.pop("filename")
-                    if "suffix" in md:
-                        md["prefix"], md["ext"] = md["file_pattern"].rsplit(".")
+                if "suffix" in md:
+                    md["prefix"], md["ext"] = md["file_pattern"].rsplit(".")
                 if "selector" in md:
                     md["selector"] = list(md["selector"].split(","))
 
                 for f in self.get_valid_files():
+                    # save metadata if file name matches pattern 
                     if f.startswith(md["prefix"]) and f.endswith(md["ext"]):
                         md["file_name"] = f
                         csv_files.append(md)
@@ -292,19 +293,22 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         if not matrixwriters:
             matrix_files = None
         else:
-            matrix_files = dict()
+            matrix_files = []
             for mw in matrixwriters:
                 md = dict()
                 for attr in mw.children:
                     if attr.name is not None:
                         md[attr.name.split(":")[-1]] = string_to_bool(attr.string)
-                if "path" in md:
-                    if "suffix" in md:
-                        md["prefix"], md["ext"] = md["path"].rsplit(".")
+                
+                if "suffix" in md:
+                    md["prefix"], md["ext"] = md["path"].rsplit(".")
 
                 for f in self.get_valid_files():
+                    # save metadata if file name matches pattern 
                     if f.startswith(md["prefix"]) and f.endswith(md["ext"]):
-                        matrix_files[f] = md
+                        md["file_name"] = f
+                        matrix_files.append(md)
+
         return matrix_files
 
     def get_file_metadata(self):
@@ -330,7 +334,16 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
         self.get_device_metadata()
         self.get_file_metadata()
-
     
+    def parse_csv(self, file_metadata):
+        fp = str(Path(self.bonsai_dir) / file_metadata['file_name'])
+
+        # col names saved in selector
+        if not file_metadata['includeheader'] and 'selector' in file_metadata:
+            return read_csv(fp, names=file_metadata['selector'])
+        else:
+            return read_csv(fp)
+            
+
 
 
