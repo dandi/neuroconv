@@ -67,10 +67,10 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         dtype : str
             TODO
         """
-        self._bonsai_dir = str(Path(bonsai_dir).absolute())
-        self._metadata_file = str(Path(self._bonsai_dir) / metadata_file)
+        self.bonsai_dir = str(Path(bonsai_dir).absolute())
+        self.metadata_file = str(Path(self.bonsai_dir) / metadata_file)
 
-        with open(self._metadata_file, "r") as f:
+        with open(self.metadata_file, "r") as f:
             soup = BeautifulSoup(f, "lxml")
         # remove disabled steps
         for tag in soup.find_all("expression", {"xsi:type": "Disable"}):
@@ -93,7 +93,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             )
         self.session_start_time = self.get_session_start_time(time)
 
-        traces_file = str(Path(self._bonsai_dir) / traces_file)
+        traces_file = str(Path(self.bonsai_dir) / traces_file)
         super().__init__(
             traces_file, self.sampling_frequency, self.numchan, self.dtype, **kwargs
         )
@@ -119,7 +119,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             self.session_start_time = dateutil.parser.parse(time)
             return self.session_start_time  # as datetime object
         except:
-            fp = str(Path(self._bonsai_dir) / time)  # file path
+            fp = str(Path(self.bonsai_dir) / time)  # file path
             with open(fp) as f:
                 reader = csv.reader(f)
                 for row in reader:
@@ -140,14 +140,14 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         ----------
         ephys_device: str, optional
         file: str, optional
-            Path of XML file to grab metadata from relative to self._bonsai_dir
-            If None, defaults to self._metadata_file
+            Path of XML file to grab metadata from relative to self.bonsai_dir
+            If None, defaults to self.metadata_file
         """
         # clean file
         if file is None:
             soup = self.nodes  # grab all
         else:
-            with open(str(Path(self._bonsai_dir) / file), "r") as f:
+            with open(str(Path(self.bonsai_dir) / file), "r") as f:
                 soup = BeautifulSoup(f, "lxml")
             # remove disabled steps
             for tag in soup.find_all("expression", {"xsi:type": "Disable"}):
@@ -186,27 +186,74 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
             self.metadata["Device"].append(device_md)
 
-    def get_all_valid_files(self):
-        # filter out empty files, grab metadata for each file
-        # distinguish between inputs and outputs?
+    def get_valid_files(self):
+        # filter out empty files
+        # TODO distinguish between inputs and outputs?
+        all_files = []
+        for f in Path(self.bonsai_dir).iterdir():
+            if f.is_file() and (f.stat().st_size > 0): # non-empty files only
+                all_files.append(str(f.name))
+        return all_files
 
-        # binary files
-        bin_md = {}
-        for s in soup.find_all(
+    def get_csv_metadata(self):
+        # find csv files & match non-empty files with metadata
+        csvwriters = self.nodes.find_all('expression', {'xsi:type': re.compile('.*csvwriter', re.IGNORECASE)})
+        if not csvwriters:
+            csv_files = None
+        else:
+            csv_files = []
+            for s in csvwriters:
+                md = dict()
+                for attr in s.children:
+                    if attr.name is not None:
+                        md[attr.name.split(':')[-1]] = attr.string
+
+                if 'filename' in md:
+                    md['file_pattern'] = md.pop('filename')
+                    if 'suffix' in md:
+                        md['prefix'], md['ext'] = md['file_pattern'].rsplit('.')
+                if 'selector' in md:
+                    md['selector'] = list(md['selector'].split(','))
+
+                for f in self.get_valid_files():
+                    if f.startswith(md['prefix']) and f.endswith(md['ext']):
+                        md['file_name'] = f
+                        csv_files.append(md)
+        return csv_files
+
+    def get_matrix_metadata(self):
+        # find binary files & match non-empty files with metadata
+        matrixwriters = self.nodes.find_all(
             "combinator", {"xsi:type": re.compile(".*matrixwriter", re.IGNORECASE)}
-        ):
-            file_md = {}
-            for attr in s.children:
-                if attr.name is not None:
-                    file_md[attr.name.split(":")[-1]] = attr.string
-            if "path" in file_md:
-                if "suffix" in file_md:
-                    file_md["prefix"], file_md["ext"] = file_md["path"].rsplit(".")
+        )
+        if not matrixwriters:
+            matrix_files = None
+        else:
+            matrix_files = dict()
+            for mw in matrixwriters:
+                md = dict()
+                for attr in mw.children:
+                    if attr.name is not None:
+                        md[attr.name.split(":")[-1]] = attr.string
+                if "path" in md:
+                    if "suffix" in md:
+                        md["prefix"], md["ext"] = md["path"].rsplit(".")
 
-            for f in all_files:
-                if f.startswith(file_md["prefix"]) and f.endswith(file_md["ext"]):
-                    bin_md[f] = file_md
-        return bin_md
+                for f in self.get_valid_files():
+                    if f.startswith(md["prefix"]) and f.endswith(md["ext"]):
+                        matrix_files[f] = md
+        return matrix_files
+
+
+    def get_file_metadata(self):
+        # Assumes self.files isn't initialized
+        self.all_files = self.get_valid_files()
+
+        if 'files' not in self.metadata:
+            self.metadata['files'] = dict()        
+        self.metadata['files']['csv'] = self.get_csv_metadata()
+        self.metadata['files']['matrix'] = self.get_matrix_metadata()
+
 
     # TODO - not hard code?
     def create_metadata(self, **kwargs):
@@ -221,6 +268,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         }
 
         self.get_device_metadata()
+        self.get_file_metadata()
 
     # TODO: make file or device specific?
     def get_bin_dat_dtype(self):
