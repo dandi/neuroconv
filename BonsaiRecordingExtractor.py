@@ -84,13 +84,14 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             self.sampling_frequency = self.get_sampling_frequency()
         if numchan is None:
             self.numchan = self.get_num_channels()
+            self.channel_ids = self.get_channel_ids()
         if dtype is None:
             self.dtype = self.get_bin_dat_dtype()
         if self.dtype not in ["uint16", "float32"]:
             raise ValueError(
                 f"dtype {self.dtype} not valid. Choose 'uint16' or 'float32'"
             )
-        self.session_start_time = self.add_session_start_time(time)
+        self.session_start_time = self.get_session_start_time(time)
 
         traces_file = str(Path(self._bonsai_dir) / traces_file)
         super().__init__(
@@ -100,7 +101,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         # compile metadata
         self.create_metadata()
 
-    def add_session_start_time(self, time=None):
+    def get_session_start_time(self, time=None):
         """ 
         Specifc session start time or return first timestamp found in a csv file.
         Needs to specific either `time` or `file`.  
@@ -130,7 +131,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                             continue
                 raise ValueError(f"Timestamp not found in file: {time}")
 
-    def extract_device_metadata(self, ephys_device="rhd", file=None):
+    def get_device_metadata(self, ephys_device="rhd", file=None):
         """ 
         Add device information from Bonsai XML metadata 
 
@@ -152,8 +153,6 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             for tag in soup.find_all("expression", {"xsi:type": "Disable"}):
                 tag.decompose()
 
-        # ecephys device only (be consistent with NWB extractor metadata)
-        self.metadata["Ecephys"]["Device"] = []
         # all devices, including ephys device.
         self.metadata["Device"] = []
 
@@ -179,11 +178,11 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                     device_md[attr_name] = text
                 d = d.next_sibling
 
+            # only two types for now
             if re.search(ephys_device, device_md["name"], re.IGNORECASE) is not None:
-                self.metadata["Ecephys"]["Device"].append(device_md)
-                device_md["ephys_device"] = True
+                device_md["type"] = "ephys"
             else:
-                device_md["ephys_device"] = False
+                device_md["type"] = "other"
 
             self.metadata["Device"].append(device_md)
 
@@ -211,60 +210,17 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
     # TODO - not hard code?
     def create_metadata(self, **kwargs):
-        self.metadata = dict()
+        self.metadata = dict()  # contains as much metadata as possible
+        self.nwb_metadata = None  # contains a subset of self.metadata in a NWB conversion friendly format
+
         self.metadata["Ecephys"] = {
             "name": "ephys_data",
-            # electrodes=electrode_table_region,
-            "starting_time": self.add_session_start_time(),
-            "sampling_frequency": self.get_sampling_frequency(),
+            "starting_time": self.session_start_time,
+            "sampling_frequency": self.sampling_frequency,
             "comments": "Generated from SpikeInterface::BonsaiRecordingExtractor",
         }
 
-        self.extract_device_metadata()
-
-    def nwb_metadata_convert(
-        self, session_description=None, identifier=None,
-    ):
-        self.nwb_metadata = dict()
-        self.nwb_metadata["NWBFile"] = {
-            "session_description": session_description,
-            "identifier": nwbfile.identifier,
-            "session_start_time": nwbfile.session_start_time,
-            "institution": nwbfile.institution,
-            "lab": nwbfile.lab,
-        }
-        self.nwb_metadata["Ecephys"] = dict()
-        # Update metadata with Device info
-        self.nwb_metadata["Ecephys"]["Device"] = []
-        for dev in nwbfile.devices:
-            self.nwb_metadata["Ecephys"]["Device"].append({"name": dev})
-        # Update metadata with ElectrodeGroup info
-        self.nwb_metadata["Ecephys"]["ElectrodeGroup"] = []
-        for k, v in nwbfile.electrode_groups.items():
-            self.nwb_metadata["Ecephys"]["ElectrodeGroup"].append(
-                {
-                    "name": v.name,
-                    "description": v.description,
-                    "location": v.location,
-                    "device": v.device.name,
-                }
-            )
-        # Update metadata with ElectricalSeries info
-        self.nwb_metadata["Ecephys"]["ElectricalSeries"] = []
-        self.nwb_metadata["Ecephys"]["ElectricalSeries"].append(
-            {"name": es.name, "description": es.description}
-        )
-
-        self.metadata = dict()
-        self.metadata["Ecephys"] = {
-            "name": "ephys_data",
-            # electrodes=electrode_table_region,
-            "starting_time": self.add_session_start_time(),
-            "sampling_frequency": self.get_sampling_frequency(),
-            "comments": "Generated from SpikeInterface::BonsaiRecordingExtractor",
-        }
-
-        self.extract_device_metadata()
+        self.get_device_metadata()
 
     # TODO: make file or device specific?
     def get_bin_dat_dtype(self):
