@@ -24,6 +24,14 @@ def find_soup(soup, **kwargs):
     return soup.find(**kwargs)
 
 
+def string_to_bool(text):
+    if text == "true":
+        text = True
+    elif text == "false":
+        text = False
+    return text
+
+
 class BonsaiRecordingExtractor(BinDatRecordingExtractor):
     extractor_name = "BonsaiRecording"
     has_default_locations = False
@@ -101,6 +109,61 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         # compile metadata
         self.create_metadata()
 
+    # TODO: make file or device specific?
+    def get_bin_dat_dtype(self):
+        """ 
+        Determine data type of binary data that contains time series.
+
+        Default is `uint16`.  For any binary data saved after an `AdcScale` operator, which 
+        applies the 0.195 scale factor for spike detection, dtype is `float32`
+
+        """
+        pat = re.compile(r".*adcscale", re.IGNORECASE)
+        try:
+            adc = find_soup(self.nodes, name="combinator", attrs={"xsi:type": pat})
+        except ValueError:  # no scaling in workflow
+            return "uint16"
+        return "float32"
+
+    # TODO: check all instances of channel ?
+    # QUESTION: how to figure out channel count when it's not speciftied
+    def get_num_channels(self, device=None):
+        """ 
+        Return number of channels in int 
+
+        Notes
+        --------
+        This assumes channel counts are in tag 'dsp:channelcount'
+        """
+        text = find_soup(self.nodes, name=re.compile(r".*channelcount$"))
+        numchan = int(text.get_text())
+        return numchan
+
+    # TODO: get device names from <q1:DeviceIndex> and id # from <q1:SelectedIndex>
+    def get_channel_ids(self):
+        """ Return list of channel ids. If channel ids are not specified, return range(num_channels) """
+        channel_ids = range(self.get_num_channels())
+        return channel_ids
+
+    def get_sampling_frequency(self, device="RHD", index=None):
+        """ 
+        Return sampling rate of recordings in Hertz 
+
+        Parameters
+        ----------
+        device : str, optional
+            Name of device. Case insensitive, supports regular expression.
+
+        """
+        pat = re.compile(r".*" + device + ".*", re.IGNORECASE)
+        device_info = self.nodes.find_all("combinator", {"xsi:type": pat})
+        if len(device_info) != 1:
+            raise Exception("More than one RHD device, revise code")
+
+        sf = find_soup(device_info[0], name=re.compile(r".*samplerate$")).get_text()
+        sf = re.findall(r"\d+", sf)[0]  # samplerate can be a string
+        return float(sf)
+
     def get_session_start_time(self, time=None):
         """ 
         Specifc session start time or return first timestamp found in a csv file.
@@ -171,10 +234,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                     attr_name = d.next_sibling.name.split(":")[-1]
                     text = d.next_sibling.text
                     # convert strings to bool when necessary
-                    if text == "true":
-                        text = True
-                    elif text == "false":
-                        text = False
+                    text = string_to_bool(text)
                     device_md[attr_name] = text
                 d = d.next_sibling
 
@@ -191,13 +251,15 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         # TODO distinguish between inputs and outputs?
         all_files = []
         for f in Path(self.bonsai_dir).iterdir():
-            if f.is_file() and (f.stat().st_size > 0): # non-empty files only
+            if f.is_file() and (f.stat().st_size > 0):  # non-empty files only
                 all_files.append(str(f.name))
         return all_files
 
     def get_csv_metadata(self):
         # find csv files & match non-empty files with metadata
-        csvwriters = self.nodes.find_all('expression', {'xsi:type': re.compile('.*csvwriter', re.IGNORECASE)})
+        csvwriters = self.nodes.find_all(
+            "expression", {"xsi:type": re.compile(".*csvwriter", re.IGNORECASE)}
+        )
         if not csvwriters:
             csv_files = None
         else:
@@ -206,18 +268,18 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                 md = dict()
                 for attr in s.children:
                     if attr.name is not None:
-                        md[attr.name.split(':')[-1]] = attr.string
+                        md[attr.name.split(":")[-1]] = string_to_bool(attr.string)
 
-                if 'filename' in md:
-                    md['file_pattern'] = md.pop('filename')
-                    if 'suffix' in md:
-                        md['prefix'], md['ext'] = md['file_pattern'].rsplit('.')
-                if 'selector' in md:
-                    md['selector'] = list(md['selector'].split(','))
+                if "filename" in md:
+                    md["file_pattern"] = md.pop("filename")
+                    if "suffix" in md:
+                        md["prefix"], md["ext"] = md["file_pattern"].rsplit(".")
+                if "selector" in md:
+                    md["selector"] = list(md["selector"].split(","))
 
                 for f in self.get_valid_files():
-                    if f.startswith(md['prefix']) and f.endswith(md['ext']):
-                        md['file_name'] = f
+                    if f.startswith(md["prefix"]) and f.endswith(md["ext"]):
+                        md["file_name"] = f
                         csv_files.append(md)
         return csv_files
 
@@ -234,7 +296,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                 md = dict()
                 for attr in mw.children:
                     if attr.name is not None:
-                        md[attr.name.split(":")[-1]] = attr.string
+                        md[attr.name.split(":")[-1]] = string_to_bool(attr.string)
                 if "path" in md:
                     if "suffix" in md:
                         md["prefix"], md["ext"] = md["path"].rsplit(".")
@@ -244,16 +306,14 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                         matrix_files[f] = md
         return matrix_files
 
-
     def get_file_metadata(self):
         # Assumes self.files isn't initialized
         self.all_files = self.get_valid_files()
 
-        if 'files' not in self.metadata:
-            self.metadata['files'] = dict()        
-        self.metadata['files']['csv'] = self.get_csv_metadata()
-        self.metadata['files']['matrix'] = self.get_matrix_metadata()
-
+        if "files" not in self.metadata:
+            self.metadata["files"] = dict()
+        self.metadata["files"]["csv"] = self.get_csv_metadata()
+        self.metadata["files"]["matrix"] = self.get_matrix_metadata()
 
     # TODO - not hard code?
     def create_metadata(self, **kwargs):
@@ -269,58 +329,3 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
         self.get_device_metadata()
         self.get_file_metadata()
-
-    # TODO: make file or device specific?
-    def get_bin_dat_dtype(self):
-        """ 
-        Determine data type of binary data that contains time series.
-
-        Default is `uint16`.  For any binary data saved after an `AdcScale` operator, which 
-        applies the 0.195 scale factor for spike detection, dtype is `float32`
-
-        """
-        pat = re.compile(r".*adcscale", re.IGNORECASE)
-        try:
-            adc = find_soup(self.nodes, name="combinator", attrs={"xsi:type": pat})
-        except ValueError:  # no scaling in workflow
-            return "uint16"
-        return "float32"
-
-    # TODO: check all instances of channel ?
-    # QUESTION: how to figure out channel count when it's not speciftied
-    def get_num_channels(self, device=None):
-        """ 
-        Return number of channels in int 
-
-        Notes
-        --------
-        This assumes channel counts are in tag 'dsp:channelcount'
-        """
-        text = find_soup(self.nodes, name=re.compile(r".*channelcount$"))
-        numchan = int(text.get_text())
-        return numchan
-
-    # TODO: get device names from <q1:DeviceIndex> and id # from <q1:SelectedIndex>
-    def get_channel_ids(self):
-        """ Return list of channel ids. If channel ids are not specified, return range(num_channels) """
-        channel_ids = range(self.get_num_channels())
-        return channel_ids
-
-    def get_sampling_frequency(self, device="RHD", index=None):
-        """ 
-        Return sampling rate of recordings in Hertz 
-
-        Parameters
-        ----------
-        device : str, optional
-            Name of device. Case insensitive, supports regular expression.
-
-        """
-        pat = re.compile(r".*" + device + ".*", re.IGNORECASE)
-        device_info = self.nodes.find_all("combinator", {"xsi:type": pat})
-        if len(device_info) != 1:
-            raise Exception("More than one RHD device, revise code")
-
-        sf = find_soup(device_info[0], name=re.compile(r".*samplerate$")).get_text()
-        sf = re.findall(r"\d+", sf)[0]  # samplerate can be a string
-        return float(sf)
