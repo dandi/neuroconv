@@ -135,6 +135,44 @@ def add_nwb_electrodes(recording, nwbfile):
     )
 
 
+def add_nwb_electrical_series(recording, nwbfile):
+    """
+        Auxiliary static method for nwbextractor.
+        Adds traces from recording object as ElectricalSeries to nwbfile object.
+        """
+    # ElectricalSeries aka traces data
+
+    if "ElectricalSeries" not in recording.nwb_metadata["Ecephys"]:
+        recording.nwb_metadata["Ecephys"]["ElectricalSeries"] = [
+            {"name": "ElectricalSeries", "description": "electrical_series_description"}
+        ]
+    # Tests if ElectricalSeries already exists in acquisition
+    channel_ids = list(recording.channel_ids)
+    nwb_es_names = [ac for ac in nwbfile.acquisition]
+    es = recording.nwb_metadata["Ecephys"]["ElectricalSeries"][0]
+    if es["name"] not in nwb_es_names:
+        # Creates an electrode table region with specified ids
+        curr_ids = channel_ids
+        table_ids = [list(nwbfile.electrodes.id[:]).index(id) for id in curr_ids]
+        electrode_table_region = nwbfile.create_electrode_table_region(
+            region=table_ids, description="electrode_table_region"
+        )
+
+        # Only name, data and electrodes are required
+        ephys_ts = ElectricalSeries(
+            name="Ephys Data",
+            data=recording.get_traces(),
+            electrodes=electrode_table_region,
+            starting_time=recording.frame_to_time(0),
+            rate=recording.get_sampling_frequency(),
+            comments="Generated from SpikeInterface::NwbRecordingExtractor",
+            description="acquisition_description",
+        )
+        nwbfile.add_acquisition(ephys_ts)
+
+    return nwbfile
+
+
 def create_nwb(recording, save_path):
     """
     Use metadata in BonsaiRecordingExtractor to create a NWB files
@@ -183,7 +221,11 @@ def create_nwb(recording, save_path):
         nwbfile = add_nwb_electrodes(recording=recording, nwbfile=nwbfile,)
 
         # Add electrical series
-        # nwbfile = add_nwb_electrical_series(recording=recording, nwbfile=nwbfile)
+        nwbfile = add_nwb_electrical_series(
+            # NwbRecordingExtractor.add_electrical_series(
+            recording=recording,
+            nwbfile=nwbfile,
+        )
 
         # Write to file
         io.write(nwbfile)
