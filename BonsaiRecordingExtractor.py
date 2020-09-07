@@ -53,7 +53,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         traces_file,
         sampling_frequency=None,
         numchan=None,
-        dtype=None,
+        traces_dtype=None,
         time=None,
         **kwargs,
     ):
@@ -94,17 +94,21 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         if numchan is None:
             self.numchan = self.get_num_channels()
             self.channel_ids = self.get_channel_ids()
-        if dtype is None:
-            self.dtype = self.get_bin_dat_dtype()
-        if self.dtype not in ["uint16", "float32"]:
-            raise ValueError(
-                f"dtype {self.dtype} not valid. Choose 'uint16' or 'float32'"
-            )
+        if traces_dtype is None:
+            self.traces_dtype = "float32"  # self.get_bin_dat_dtype()
+        # if self.dtype not in ["uint16", "float32"]:
+        #    raise ValueError(
+        #        f"dtype {self.dtype} not valid. Choose 'uint16' or 'float32'"
+        #    )
         self.session_start_time = self.get_session_start_time(time)
 
         traces_file = str(Path(self.bonsai_dir) / traces_file)
         super().__init__(
-            traces_file, self.sampling_frequency, self.numchan, self.dtype, **kwargs
+            traces_file,
+            self.sampling_frequency,
+            self.numchan,
+            self.traces_dtype,
+            **kwargs,
         )
 
         # compile metadata
@@ -195,7 +199,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                             continue
                 raise ValueError(f"Timestamp not found in file: {time}")
 
-    def get_device_metadata(self, ephys_device="rhd", file=None):
+    def create_device_metadata(self, ephys_device="rhd", file=None):
         """ 
         Add device information from Bonsai XML metadata 
 
@@ -218,7 +222,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                 tag.decompose()
 
         # all devices, including ephys device.
-        self.metadata["Device"] = []
+        self.metadata["devices"] = []
 
         for d in soup.find_all(re.compile(".*:deviceindex")):
             device_md = dict()
@@ -245,7 +249,23 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             else:
                 device_md["type"] = "other"
 
-            self.metadata["Device"].append(device_md)
+            self.metadata["devices"].append(device_md)
+
+    def _match_file_name(self, file_metadata, metadata_list):
+        # match each valid file with the appropriate metadata extracted from the xml file
+        for f in self.get_valid_files():
+            # save metadata if file name matches pattern
+            # try:
+            if f.startswith(file_metadata.get("prefix", "")) and f.endswith(
+                file_metadata.get("ext", "")
+            ):
+                file_metadata["file_name"] = f
+                metadata_list.append(file_metadata)
+            # except:
+            elif f == file_metadata.get("filename"):
+                file_metadata["file_name"] = file_metadata.pop("filename")
+
+        return metadata_list
 
     def get_valid_files(self):
         # filter out empty files
@@ -256,94 +276,128 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                 all_files.append(str(f.name))
         return all_files
 
-    def get_csv_metadata(self):
-        # find csv files & match non-empty files with metadata
-        csvwriters = self.nodes.find_all(
-            "expression", {"xsi:type": re.compile(".*csvwriter", re.IGNORECASE)}
-        )
-        if not csvwriters:
-            csv_files = None
-        else:
-            csv_files = []
-            for s in csvwriters:
-                md = dict()
-                for attr in s.children:
-                    if attr.name is not None:
-                        md[attr.name.split(":")[-1]] = string_to_bool(attr.string)
+    def _clean_file_metadata(self, file_type, md):
+        # extract relevant information from file metadata
+        # currently support csv and matrix
+        if "csv" in file_type:
+            if "filename" in md:
+                md["file_pattern"] = md.pop("filename")
+            if "suffix" in md:
+                md["prefix"], md["ext"] = md["file_pattern"].rsplit(".")
+            if "selector" in md:
+                md["selector"] = list(md["selector"].split(","))
 
-                if "filename" in md:
-                    md["file_pattern"] = md.pop("filename")
-                if "suffix" in md:
-                    md["prefix"], md["ext"] = md["file_pattern"].rsplit(".")
-                if "selector" in md:
-                    md["selector"] = list(md["selector"].split(","))
+        else:  # matrixwriter
+            if "suffix" in md:
+                md["prefix"], md["ext"] = md["path"].rsplit(".")
 
-                for f in self.get_valid_files():
-                    # save metadata if file name matches pattern 
-                    if f.startswith(md["prefix"]) and f.endswith(md["ext"]):
-                        md["file_name"] = f
-                        csv_files.append(md)
-        return csv_files
+        md["file_type"] = file_type
 
-    def get_matrix_metadata(self):
+        return md
+
+    def _match_file_metadata(self, file_type):
+        # TODO add dtype
+        # TODO add file type (position, pulse etc)
         # find binary files & match non-empty files with metadata
-        matrixwriters = self.nodes.find_all(
-            "combinator", {"xsi:type": re.compile(".*matrixwriter", re.IGNORECASE)}
+        """
+        Example
+        ---------
+
+        {'ext': 'raw',
+         'file_name': 'intan_2019-12-05T09_28_34.raw',
+         'layout': 'ColumnMajor',
+         'overwrite': False,
+         'path': 'intan_.raw',
+         'prefix': 'intan_',
+         'suffix': 'Timestamp'},
+
+        TO ADD 
+        {'file_type': 'ephys', 'position', 'pulse', other,
+         'combinator': matrix/csv reader or writer,
+         'input': 
+
+        }
+
+        """
+        tag = "expression" if "csv" in file_type else "combinator"
+        matching_files = self.nodes.find_all(
+            tag, {"xsi:type": re.compile(f".*{file_type}", re.IGNORECASE)}
         )
-        if not matrixwriters:
-            matrix_files = None
+
+        if not matching_files:
+            return None
         else:
-            matrix_files = []
-            for mw in matrixwriters:
+            metadata_list = list()
+            for f in matching_files:
                 md = dict()
-                for attr in mw.children:
+                for attr in f.children:
                     if attr.name is not None:
                         md[attr.name.split(":")[-1]] = string_to_bool(attr.string)
-                
-                if "suffix" in md:
-                    md["prefix"], md["ext"] = md["path"].rsplit(".")
 
-                for f in self.get_valid_files():
-                    # save metadata if file name matches pattern 
-                    if f.startswith(md["prefix"]) and f.endswith(md["ext"]):
-                        md["file_name"] = f
-                        matrix_files.append(md)
+                # clean file metadata
+                md = self._clean_file_metadata(file_type, md)
 
-        return matrix_files
+                # file type specifc operations
+                metadata_list = self._match_file_name(md, metadata_list)
 
-    def get_file_metadata(self):
+            # if all files are matched, len(matching_files) and len(metadata_list)
+            return metadata_list
+
+    def create_file_metadata(self):
         # Assumes self.files isn't initialized
         self.all_files = self.get_valid_files()
 
         if "files" not in self.metadata:
-            self.metadata["files"] = dict()
-        self.metadata["files"]["csv"] = self.get_csv_metadata()
-        self.metadata["files"]["matrix"] = self.get_matrix_metadata()
+            self.metadata["files"] = list()
+        # self.metadata["files"]["csv"] = self.get_csv_metadata()
+        # self.metadata["files"]["matrix"] = self.get_matrix_metadata()
+
+        # combinators that saves or reads files
+        combinators = ["matrixwriter", "matrixreader", "csvwriter", "csvreader"]
+        for comb in combinators:
+            matched_metadata = self._match_file_metadata(comb)
+            if matched_metadata is not None:
+                self.metadata["files"].extend(matched_metadata)
 
     # TODO - not hard code?
     def create_metadata(self, **kwargs):
         self.metadata = dict()  # contains as much metadata as possible
         self.nwb_metadata = None  # contains a subset of self.metadata in a NWB conversion friendly format
 
-        self.metadata["Ecephys"] = {
-            "name": "ephys_data",
+        self.metadata["ephys"] = {
+            "name": "Electrical Series",
             "starting_time": self.session_start_time,
             "sampling_frequency": self.sampling_frequency,
-            "comments": "Generated from SpikeInterface::BonsaiRecordingExtractor",
+            "comments": "Generated from BonsaiRecordingExtractor",
         }
 
-        self.get_device_metadata()
-        self.get_file_metadata()
-    
+        self.create_device_metadata()
+        self.create_file_metadata()
+
     def parse_csv(self, file_metadata):
-        fp = str(Path(self.bonsai_dir) / file_metadata['file_name'])
+        """ 
+        Parameters
+        ----------
+        file_metadata: dict in self.metadata['files']['csv']
+        """
+        fp = str(Path(self.bonsai_dir) / file_metadata["file_name"])
 
         # col names saved in selector
-        if not file_metadata['includeheader'] and 'selector' in file_metadata:
-            return read_csv(fp, names=file_metadata['selector'])
+        if not file_metadata["includeheader"] and "selector" in file_metadata:
+            return read_csv(fp, names=file_metadata["selector"])
         else:
             return read_csv(fp)
-            
 
+    def parse_matrix_reader(self, file_metadata):
+        """ 
+        Parameters
+        ----------
+        file_metadata: dict in self.metadata['files']['matrix']
+        """
+        fp = str(Path(self.bonsai_dir) / file_metadata["file_name"])
 
+        # memmap order ‘C’ - row major, ‘F’ - column major
+        order = "C" if (file_metadata["layout"] == "RowMajor") else "F"
+        dat = np.memmap(fp, dtype="float32", order=order)
 
+    # def save_data(self)

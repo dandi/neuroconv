@@ -34,6 +34,8 @@ try:
     from pynwb import NWBFile
     from pynwb.ecephys import ElectricalSeries
     from pynwb.ecephys import ElectrodeGroup
+    from pynwb.behavior import SpatialSeries
+    from pynwb.behavior import Position
 
     HAVE_NWB = True
 except ModuleNotFoundError:
@@ -60,7 +62,7 @@ def add_nwb_devices(recording, nwbfile):
         recording.nwb_metadata["Ecephys"]["Device"] = []
 
     # TODO: handle cases with multiple ephys devices?
-    for dev in recording.metadata["Device"]:
+    for dev in recording.metadata["devices"]:
         # only ephys devices are recorded in NWB
         if dev["type"] == "ephys":
             # nwbfile.create_device(name=dev["name"])
@@ -160,15 +162,43 @@ def add_nwb_electrical_series(recording, nwbfile):
 
         # Only name, data and electrodes are required
         ephys_ts = ElectricalSeries(
-            name="Ephys Data",
-            data=recording.get_traces(),
+            name="Electrical Series",
+            data=recording.get_traces().T,  # transpose
             electrodes=electrode_table_region,
             starting_time=recording.frame_to_time(0),
             rate=recording.get_sampling_frequency(),
-            comments="Generated from SpikeInterface::NwbRecordingExtractor",
+            comments="Generated from BonsaiRecordingExtractor",
             description="acquisition_description",
         )
         nwbfile.add_acquisition(ephys_ts)
+
+    return nwbfile
+
+
+# TODO finish
+def add_nwb_spatial_series(recording, nwbfile):
+    # Optional
+
+    # if 'Position'
+
+    if "Behavior" not in recording.nwb_metadata:
+        recording.nwb_metadata["Behavior"] = [
+            {"name": "Behavior", "description": "behavior_module_description"}
+        ]
+        behavior_module = nwbfile.create_processing_module(
+            name="behavior", description="processed behavioral data"
+        )
+
+    if "Position" not in recording.nwb_metadata["Behavior"]:
+        position_obj = Position()
+        position.create_spatial_series(
+            name="position1",
+            data=np.linspace(0, 1, 20),
+            rate=50.0,
+            reference_frame="starting gate",
+        )
+
+    nwbfile.add_acquisition()
 
     return nwbfile
 
@@ -211,21 +241,20 @@ def create_nwb(recording, save_path):
                 }
             nwbfile = NWBFile(**recording.nwb_metadata["NWBFile"])
 
+        # Required
         # Add devices
-        nwbfile = add_nwb_devices(recording=recording, nwbfile=nwbfile,)
+        nwbfile = add_nwb_devices(recording=recording, nwbfile=nwbfile)
 
         # Add electrode groups
-        nwbfile = add_nwb_electrode_groups(recording=recording, nwbfile=nwbfile,)
+        nwbfile = add_nwb_electrode_groups(recording=recording, nwbfile=nwbfile)
 
         # Add electrodes
-        nwbfile = add_nwb_electrodes(recording=recording, nwbfile=nwbfile,)
+        nwbfile = add_nwb_electrodes(recording=recording, nwbfile=nwbfile)
 
         # Add electrical series
-        nwbfile = add_nwb_electrical_series(
-            # NwbRecordingExtractor.add_electrical_series(
-            recording=recording,
-            nwbfile=nwbfile,
-        )
+        nwbfile = add_nwb_electrical_series(recording=recording, nwbfile=nwbfile)
+
+
 
         # Write to file
         io.write(nwbfile)
