@@ -251,51 +251,58 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
             self.metadata["devices"].append(device_md)
 
-    def _match_file_name(self, file_metadata, metadata_list):
-        # match each valid file with the appropriate metadata extracted from the xml file
-        for f in self.get_valid_files():
-            # save metadata if file name matches pattern
-            # try:
-            if f.startswith(file_metadata.get("prefix", "")) and f.endswith(
-                file_metadata.get("ext", "")
-            ):
-                file_metadata["file_name"] = f
-                metadata_list.append(file_metadata)
-            # except:
-            elif f == file_metadata.get("filename"):
-                file_metadata["file_name"] = file_metadata.pop("filename")
+    def get_valid_files(self, exclude="bonsai"):
+        """ 
+        Filter out empty files and bonsai output files
 
-        return metadata_list
 
-    def get_valid_files(self):
-        # filter out empty files
-        # TODO distinguish between inputs and outputs?
+        Parameters
+        ----------
+        exclude: str
+            exclude files with this string in filename 
+        """
         all_files = []
         for f in Path(self.bonsai_dir).iterdir():
-            if f.is_file() and (f.stat().st_size > 0):  # non-empty files only
+            if (
+                f.is_file() and (f.stat().st_size > 0) and exclude not in str(f.name)
+            ):  # non-empty files only
                 all_files.append(str(f.name))
         return all_files
 
-    def _clean_file_metadata(self, file_type, md):
+    def _match_filename(self, bonsai_type, md, md_list):
         # extract relevant information from file metadata
         # currently support csv and matrix
-        if "csv" in file_type:
-            if "filename" in md:
+
+        # if there isn't a suffix, 'filename' or 'path' is the actual filename
+        if "suffix" in md:
+            try:
                 md["file_pattern"] = md.pop("filename")
-            if "suffix" in md:
-                md["prefix"], md["ext"] = md["file_pattern"].rsplit(".")
-            if "selector" in md:
-                md["selector"] = list(md["selector"].split(","))
+            except KeyError:
+                md["file_pattern"] = md.pop("path")
+            md["prefix"], md["ext"] = md["file_pattern"].rsplit(".")
 
-        else:  # matrixwriter
-            if "suffix" in md:
-                md["prefix"], md["ext"] = md["path"].rsplit(".")
+        if "selector" in md:
+            md["selector"] = list(md["selector"].split(","))
 
-        md["file_type"] = file_type
+        md["bonsai_type"] = bonsai_type
 
-        return md
+        # save metadata if file name matches pattern
+        for f in self.get_valid_files():
+            try:
+                if f.startswith(md["prefix"]) and f.endswith(md["ext"]):
+                    md["filename"] = f
+                    md_list.append(md)
+                    return md_list
+            except KeyError:
+                if f == md["filename"]:
+                    md_list.append(md)
+                    return md_list
+            except:
+                continue
 
-    def _match_file_metadata(self, file_type):
+        return md_list
+
+    def _match_file_metadata(self, bonsai_type):
         # TODO add dtype
         # TODO add file type (position, pulse etc)
         # find binary files & match non-empty files with metadata
@@ -312,16 +319,16 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
          'suffix': 'Timestamp'},
 
         TO ADD 
-        {'file_type': 'ephys', 'position', 'pulse', other,
+        {'bonsai_type': 'ephys', 'position', 'pulse', other,
          'combinator': matrix/csv reader or writer,
          'input': 
 
         }
 
         """
-        tag = "expression" if "csv" in file_type else "combinator"
+        tag = "expression" if "csv" in bonsai_type else "combinator"
         matching_files = self.nodes.find_all(
-            tag, {"xsi:type": re.compile(f".*{file_type}", re.IGNORECASE)}
+            tag, {"xsi:type": re.compile(f".*{bonsai_type}", re.IGNORECASE)}
         )
 
         if not matching_files:
@@ -334,11 +341,8 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                     if attr.name is not None:
                         md[attr.name.split(":")[-1]] = string_to_bool(attr.string)
 
-                # clean file metadata
-                md = self._clean_file_metadata(file_type, md)
-
                 # file type specifc operations
-                metadata_list = self._match_file_name(md, metadata_list)
+                metadata_list = self._match_filename(bonsai_type, md, metadata_list)
 
             # if all files are matched, len(matching_files) and len(metadata_list)
             return metadata_list
