@@ -32,6 +32,7 @@ try:
     import pynwb
     from pynwb import NWBHDF5IO
     from pynwb import NWBFile
+    from pynwb import TimeSeries
     from pynwb.ecephys import ElectricalSeries
     from pynwb.ecephys import ElectrodeGroup
     from pynwb.behavior import SpatialSeries
@@ -141,7 +142,7 @@ def add_nwb_electrical_series(recording, nwbfile):
     """
         Auxiliary static method for nwbextractor.
         Adds traces from recording object as ElectricalSeries to nwbfile object.
-        """
+    """
     # ElectricalSeries aka traces data
 
     if "ElectricalSeries" not in recording.nwb_metadata["Ecephys"]:
@@ -162,7 +163,7 @@ def add_nwb_electrical_series(recording, nwbfile):
 
         # Only name, data and electrodes are required
         ephys_ts = ElectricalSeries(
-            name="Electrical Series",
+            name="ElectricalSeries",
             data=recording.get_traces().T,  # transpose
             electrodes=electrode_table_region,
             starting_time=recording.frame_to_time(0),
@@ -176,29 +177,60 @@ def add_nwb_electrical_series(recording, nwbfile):
 
 
 # TODO finish
-def add_nwb_spatial_series(recording, nwbfile):
-    # Optional
+def add_nwb_time_series(recording, nwbfile, bonsai_metadata=None):
+    """ 
+    Adds relevant time series data & metadata from Bonsai recording to NWB file & 
+    updates NWB metadata in recording  
 
-    # if 'Position'
+    Note: assumes electrode group information not available in recording.metadata
 
-    if "Behavior" not in recording.nwb_metadata:
-        recording.nwb_metadata["Behavior"] = [
-            {"name": "Behavior", "description": "behavior_module_description"}
-        ]
-        behavior_module = nwbfile.create_processing_module(
-            name="behavior", description="processed behavioral data"
-        )
+    Parameters
+    ----------
+    recording: RecordingExtractor
+    nwbfile: NWB object
+    bonsai_metadata: dictionary in the recording.metadata format
+    """
 
-    if "Position" not in recording.nwb_metadata["Behavior"]:
-        position_obj = Position()
-        position.create_spatial_series(
-            name="position1",
-            data=np.linspace(0, 1, 20),
-            rate=50.0,
-            reference_frame="starting gate",
-        )
+    if bonsai_metadata:
+        recording.metadata = bonsai_metadata
 
-    nwbfile.add_acquisition()
+    # look for files with type='time_series' in bonsai file metadata
+    # TODO fix this when file type matching is fixed
+    time_series_files = [
+        f for f in recording.metadata["files"] if f.get("filetype") == "time_series"
+    ]
+
+    if time_series_files:
+        for ts_file in time_series_files:
+
+            dat = recording.parse_csv(ts_file)
+
+            # TODO HDF5 have issues reading timestamps?
+            if ("Timestamp" in dat.columns) and (dat.shape[1] > 1):
+                ts = TimeSeries(
+                    name=ts_file["filename"],
+                    unit="s",
+                    timestamps=dat["Timestamp"].to_numpy(),
+                    data=dat.drop("Timestamp", axis=1).squeeze().to_numpy(),
+                )
+            else:
+                ts = TimeSeries(
+                    name=ts_file["filename"], unit="s", data=dat.to_numpy(), rate=0.0
+                )
+
+            nwbfile.add_acquisition(ts)
+
+    return nwbfile
+
+
+def add_nwb_behavior_module(recording, nwbfile):
+
+    recording.nwb_metadata["Behavior"] = [
+        {"name": "Behavior", "description": "behavior_module_description"}
+    ]
+    behavior_module = nwbfile.create_processing_module(
+        name="behavior", description="processed behavioral data"
+    )
 
     return nwbfile
 
@@ -220,26 +252,26 @@ def create_nwb(recording, save_path):
         distutils.version.LooseVersion(pynwb.__version__) >= "1.3.3"
     ), "'write_recording' not supported for version < 1.3.3. Run pip install --upgrade pynwb"
 
-    if os.path.exists(save_path):
-        read_mode = "r+"
-    else:
-        read_mode = "w"
+    # if os.path.exists(save_path):
+    #    read_mode = "r+"
+    # else:
+    #    read_mode = "w"
 
     # Update any previous metadata with user passed dictionary
     if recording.nwb_metadata is None:
         recording.nwb_metadata = dict()
 
-    with NWBHDF5IO(save_path, mode=read_mode) as io:
-        if read_mode == "r+":
-            nwbfile = io.read()
-        else:
-            if "NWBFile" not in recording.nwb_metadata:
-                recording.nwb_metadata["NWBFile"] = {
-                    "session_description": "no description",
-                    "identifier": str(uuid.uuid4()),
-                    "session_start_time": recording.session_start_time,
-                }
-            nwbfile = NWBFile(**recording.nwb_metadata["NWBFile"])
+    with NWBHDF5IO(save_path, mode="w") as io:
+        # if read_mode == "r+":
+        #    nwbfile = io.read()
+        # else:
+        if "NWBFile" not in recording.nwb_metadata:
+            recording.nwb_metadata["NWBFile"] = {
+                "session_description": "no description",
+                "identifier": str(uuid.uuid4()),
+                "session_start_time": recording.session_start_time,
+            }
+        nwbfile = NWBFile(**recording.nwb_metadata["NWBFile"])
 
         # Required
         # Add devices
@@ -254,7 +286,8 @@ def create_nwb(recording, save_path):
         # Add electrical series
         nwbfile = add_nwb_electrical_series(recording=recording, nwbfile=nwbfile)
 
-
+        # Add time series (if any)
+        nwbfile = add_nwb_time_series(recording=recording, nwbfile=nwbfile)
 
         # Write to file
         io.write(nwbfile)

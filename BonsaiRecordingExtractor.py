@@ -78,6 +78,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         """
         self.bonsai_dir = str(Path(bonsai_dir).absolute())
         self.metadata_file = str(Path(self.bonsai_dir) / metadata_file)
+        self.traces_file = str(Path(self.bonsai_dir) / traces_file)
 
         with open(self.metadata_file, "r") as f:
             soup = BeautifulSoup(f, "lxml")
@@ -101,10 +102,8 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         #        f"dtype {self.dtype} not valid. Choose 'uint16' or 'float32'"
         #    )
         self.session_start_time = self.get_session_start_time(time)
-
-        traces_file = str(Path(self.bonsai_dir) / traces_file)
         super().__init__(
-            traces_file,
+            self.traces_file,
             self.sampling_frequency,
             self.numchan,
             self.traces_dtype,
@@ -269,7 +268,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                 all_files.append(str(f.name))
         return all_files
 
-    def _match_filename(self, bonsai_type, md, md_list):
+    def _match_filename(self, md):
         # extract relevant information from file metadata
         # currently support csv and matrix
 
@@ -284,23 +283,40 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         if "selector" in md:
             md["selector"] = list(md["selector"].split(","))
 
-        md["bonsai_type"] = bonsai_type
-
         # save metadata if file name matches pattern
         for f in self.get_valid_files():
             try:
                 if f.startswith(md["prefix"]) and f.endswith(md["ext"]):
                     md["filename"] = f
-                    md_list.append(md)
-                    return md_list
+                    return md
             except KeyError:
                 if f == md["filename"]:
-                    md_list.append(md)
-                    return md_list
+                    return md
             except:
                 continue
 
-        return md_list
+        # file metadata not added when it doesn't match any non-empty file
+        return None
+
+    def _match_filetype(self, bonsai_type, bs, md):
+        # extract type of file from the "ExternalizedMapping" node directly above
+        # reader - inputs, writer - outputs
+        md["bonsai_type"] = bonsai_type
+
+        if "reader" in bonsai_type:
+            md["filetype"] = "input"
+        # elif md['filename'] == Path(self.traces_file).name:
+        #    md['filetype'] = 'ephys'
+        else:
+            try:
+                ext_map = bs.find_previous_sibling()
+                # print(md['filename'])
+                # print(ext_map)
+                md["filetype"] = ext_map.property.attrs["displayname"]
+            except:
+                md["filetype"] = "other"
+
+        return md
 
     def _match_file_metadata(self, bonsai_type):
         # TODO add dtype
@@ -342,7 +358,10 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                         md[attr.name.split(":")[-1]] = string_to_bool(attr.string)
 
                 # file type specifc operations
-                metadata_list = self._match_filename(bonsai_type, md, metadata_list)
+                md = self._match_filename(md)
+                if md is not None:
+                    md = self._match_filetype(bonsai_type, f, md)
+                    metadata_list.append(md)
 
             # if all files are matched, len(matching_files) and len(metadata_list)
             return metadata_list
@@ -384,13 +403,16 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         ----------
         file_metadata: dict in self.metadata['files']['csv']
         """
-        fp = str(Path(self.bonsai_dir) / file_metadata["file_name"])
+        fp = str(Path(self.bonsai_dir) / file_metadata["filename"])
 
         # col names saved in selector
-        if not file_metadata["includeheader"] and "selector" in file_metadata:
-            return read_csv(fp, names=file_metadata["selector"])
+        if file_metadata["includeheader"]:
+            return read_csv
         else:
-            return read_csv(fp)
+            try:
+                return read_csv(fp, names=file_metadata["selector"])
+            except:
+                return read_csv(fp, header=None)
 
     def parse_matrix_reader(self, file_metadata):
         """ 
