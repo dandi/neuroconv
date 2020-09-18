@@ -26,6 +26,7 @@ from datetime import datetime
 from collections import defaultdict, abc
 from pathlib import Path
 import numpy as np
+import dateutil.parser as dp
 import distutils.version
 
 try:
@@ -195,30 +196,39 @@ def add_nwb_time_series(recording, nwbfile, bonsai_metadata=None):
         recording.metadata = bonsai_metadata
 
     # look for files with type='time_series' in bonsai file metadata
-    # TODO fix this when file type matching is fixed
     time_series_files = [
         f for f in recording.metadata["files"] if f.get("filetype") == "time_series"
     ]
 
+    # TODO deal with cases when timestamps are relative e.g. heartbeat_2019-12-05T09_28_34.csv
     if time_series_files:
         for ts_file in time_series_files:
-
             dat = recording.parse_csv(ts_file)
 
-            # TODO HDF5 have issues reading timestamps?
-            if ("Timestamp" in dat.columns) and (dat.shape[1] > 1):
-                ts = TimeSeries(
-                    name=ts_file["filename"],
-                    unit="s",
-                    timestamps=dat["Timestamp"].to_numpy(),
-                    data=dat.drop("Timestamp", axis=1).squeeze().to_numpy(),
-                )
-            else:
-                ts = TimeSeries(
-                    name=ts_file["filename"], unit="s", data=dat.to_numpy(), rate=0.0
+            
+            try:
+                # 'Timestamps' columns are in ISO-8601 format (absolute time)
+                ts_delta = [
+                    dp.parse(t) - recording.session_start_time for t in dat["Timestamp"]
+                ]
+                ts_delta = np.array(ts_delta, dtype="timedelta64[ms]") / np.timedelta64(
+                    1, "s"
                 )
 
-            nwbfile.add_acquisition(ts)
+                ts = TimeSeries(
+                    name=ts_file["filename"],
+                    data=dat.drop("Timestamp", axis=1).squeeze().to_numpy(),
+                    timestamps=ts_delta,
+                    description=f'Data parsed from {ts_file["filename"]}',
+                    comments="Timestamps are in seconds",
+                )
+
+                nwbfile.add_acquisition(ts)
+            except Exception as e:
+                print(
+                    f'Fail to convert data to pynwb.base.TimeSeries: {ts_file["filename"]}'
+                )
+                print(e)
 
     return nwbfile
 

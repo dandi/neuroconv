@@ -2,7 +2,8 @@ from spikeextractors import RecordingExtractor, BinDatRecordingExtractor
 from bs4 import BeautifulSoup
 from pathlib import Path
 from datetime import datetime
-import dateutil.parser
+from numpy import timedelta64
+import dateutil.parser as dp
 import lxml
 import csv
 import re
@@ -186,14 +187,14 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         try:
             dat = parse_csv(file_path)
             if "Timestamp" in file_metadata["selector"] or "Timestamp" in dat.columns:
-                return dateutil.parser.parse(dat.Timestamp[0])
+                return dp.parse(dat["Timestamp"][0])
         except:
             # return first time stamp found in file
             with open(file_path) as f:
                 reader = csv.reader(f)
                 for row in reader:
                     for col in row:
-                        return dateutil.parser.parse(col)
+                        return dp.parse(col)
         else:
             raise ValueError(f"Timestamp not found in file: {file_path}")
 
@@ -212,7 +213,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             return datetime.now()
 
         try:
-            return dateutil.parser.parse(time)  # as datetime object
+            return dp.parse(time)  # as datetime object
         except:
             fp = str(Path(self.bonsai_dir) / time)  # file path
             return self.get_file_start_time(fp)
@@ -432,6 +433,9 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
                 return read_csv(fp, names=file_metadata["selector"])
             except:
                 return read_csv(fp, header=None)
+
+        # calculate time series start time and return timestamps
+
 
     def parse_matrix_reader(self, file_metadata):
         """ 
