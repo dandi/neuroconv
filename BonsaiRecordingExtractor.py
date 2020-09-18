@@ -168,35 +168,54 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         sf = re.findall(r"\d+", sf)[0]  # samplerate can be a string
         return float(sf)
 
-    def get_session_start_time(self, time=None):
+    def get_file_start_time(self, file_path=None, file_metadata=None):
         """ 
-        Specifc session start time or return first timestamp found in a csv file.
-        Needs to specific either `time` or `file`.  
+        Return first timestamp found in a csv file.
+        Needs to specific either `file_path` and/or `file_metadata`.  
 
         Parameters
         ----------
         time : datetime object or str that can be converted to datetime object
         file : csv file path  
         """
+        # parse file start time from filepath ( file_metadata
+
+        if file_metadata:
+            file_path = str(Path(self.bonsai_dir) / file_metadata["filename"])
+
+        try:
+            dat = parse_csv(file_path)
+            if "Timestamp" in file_metadata["selector"] or "Timestamp" in dat.columns:
+                return dateutil.parser.parse(dat.Timestamp[0])
+        except:
+            # return first time stamp found in file
+            with open(file_path) as f:
+                reader = csv.reader(f)
+                for row in reader:
+                    for col in row:
+                        return dateutil.parser.parse(col)
+        else:
+            raise ValueError(f"Timestamp not found in file: {file_path}")
+
+    def get_session_start_time(self, time=None):
+        """ 
+        Start time of a file or return first timestamp found in a csv file.
+
+        Parameters
+        ----------
+        time : 
+            datetime object or str that can be converted to datetime object OR
+            file path to timestamp file
+        """
         # not initialized
         if time is None:
             return datetime.now()
 
         try:
-            self.session_start_time = dateutil.parser.parse(time)
-            return self.session_start_time  # as datetime object
+            return dateutil.parser.parse(time)  # as datetime object
         except:
             fp = str(Path(self.bonsai_dir) / time)  # file path
-            with open(fp) as f:
-                reader = csv.reader(f)
-                for row in reader:
-                    for col in row:
-                        try:  # returns first time stamp found
-                            self.session_start_time = dateutil.parser.parse(col)
-                            return self.session_start_time
-                        except Exception:
-                            continue
-                raise ValueError(f"Timestamp not found in file: {time}")
+            return self.get_file_start_time(fp)
 
     def create_device_metadata(self, ephys_device="rhd", file=None):
         """ 
@@ -401,7 +420,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         """ 
         Parameters
         ----------
-        file_metadata: dict in self.metadata['files']['csv']
+        file_metadata: a dict in self.metadata['files']
         """
         fp = str(Path(self.bonsai_dir) / file_metadata["filename"])
 
