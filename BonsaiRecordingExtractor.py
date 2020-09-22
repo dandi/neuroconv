@@ -433,9 +433,31 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             except:
                 return read_csv(fp, header=None)
 
-    def parse_time_series_csv(self, file_metadata, delta=True):
+    def parse_csv_timestamps(
+        self, dat, delta=True, timestamps_only=False, timestamp_col="Timestamp"
+    ):
+        """ 
+        Parameters
+        ----------
+        dat: Dataframe from self.parse_csv
+        delta: bool
+            Whether the timestamp col represents time difference relative to session start time
+        timestamps_only: bool
+        """
 
-        dat = self.parse_csv(file_metadata)
+        if delta:
+            ts_delta = [
+                dp.parse(t) - self.session_start_time for t in dat[timestamp_col]
+            ]
+            ts_delta = np.array(ts_delta, dtype="timedelta64[ms]") / np.timedelta64(
+                1, "s"
+            )
+            dat_clean = dat.drop("Timestamp", axis=1).squeeze().to_numpy()
+
+        if timestamps_only:
+            return ts_delta
+        else:
+            return dat_clean, ts_delta
 
     def parse_matrix(self, file_metadata):
         """ 
@@ -452,8 +474,8 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         if "depth" in file_metadata:
             if file_metadata["depth"] == "S32":
                 dtype = "int32"
-            else:
-                dtype = "float64"
+        else:
+            dtype = "float64"
 
         try:
             dat = np.memmap(fp, dtype=dtype, order=order)

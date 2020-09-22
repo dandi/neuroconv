@@ -210,16 +210,11 @@ def add_nwb_time_series(recording, nwbfile, bonsai_metadata=None):
 
             try:
                 # 'Timestamps' columns are in ISO-8601 format (absolute time)
-                ts_delta = [
-                    dp.parse(t) - recording.session_start_time for t in dat["Timestamp"]
-                ]
-                ts_delta = np.array(ts_delta, dtype="timedelta64[ms]") / np.timedelta64(
-                    1, "s"
-                )
+                dat_clean, ts_delta = recording.parse_csv_timestamps(dat)
 
                 ts = TimeSeries(
                     name=ts_file["filename"],
-                    data=dat.drop("Timestamp", axis=1).squeeze().to_numpy(),
+                    data=dat_clean,
                     timestamps=ts_delta,
                     description=f'Data parsed from {ts_file["filename"]}',
                     comments="Timestamps are in seconds",
@@ -243,18 +238,27 @@ def add_nwb_time_series(recording, nwbfile, bonsai_metadata=None):
         for ts_file in ts_matrix_files:
             dat = recording.parse_matrix(ts_file)
 
-            # FOR NOW, GET DEFAULT TIME STAMPS FOR BNO55Device FROM quaterion-time_2019-12-05T09_28_34.csv
-            ts
             try:
                 print(ts_file["filename"])
+                # FOR NOW, GET DEFAULT TIME STAMPS FOR BNO55Device FROM quaterion-time_2019-12-05T09_28_34.csv
+                ts_dat = recording.parse_csv(
+                    {
+                        "bonsai_type": "csvwriter",
+                        "filename": "quaterion-time_2019-12-05T09_28_34.csv",
+                        "nwb_class": "TimeSeries",
+                        "includeheader": False,
+                        "selector": ["Timestamp", "Value"],
+                    }
+                )
+                ts_delta = recording.parse_csv_timestamps(ts_dat, timestamps_only=True)
 
                 ts = TimeSeries(
                     name=ts_file["filename"],
                     data=dat,
-                    # timestamps=ts_delta,
+                    timestamps=ts_delta,
                     description=f'Data parsed from {ts_file["filename"]}',
-                    # comments="Timestamps are in seconds",
                 )
+                nwbfile.add_acquisition(ts)
             except Exception as e:
                 print(
                     f'Fail to convert data to pynwb.base.TimeSeries: {ts_file["filename"]}'
