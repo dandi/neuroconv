@@ -195,17 +195,19 @@ def add_nwb_time_series(recording, nwbfile, bonsai_metadata=None):
     if bonsai_metadata:
         recording.metadata = bonsai_metadata
 
-    # look for files with type='time_series' in bonsai file metadata
-    time_series_files = [
-        f for f in recording.metadata["files"] if f.get("filetype") == "time_series"
+    # look for TimeSeries csv files
+    ts_csv_files = [
+        f
+        for f in recording.metadata["files"]
+        if f.get("nwb_class") == "TimeSeries"
+        and (f.get("ext") == "csv" or "csv" in f.get("bonsai_type"))
     ]
 
     # TODO deal with cases when timestamps are relative e.g. heartbeat_2019-12-05T09_28_34.csv
-    if time_series_files:
-        for ts_file in time_series_files:
+    if ts_csv_files:
+        for ts_file in ts_csv_files:
             dat = recording.parse_csv(ts_file)
 
-            
             try:
                 # 'Timestamps' columns are in ISO-8601 format (absolute time)
                 ts_delta = [
@@ -224,6 +226,35 @@ def add_nwb_time_series(recording, nwbfile, bonsai_metadata=None):
                 )
 
                 nwbfile.add_acquisition(ts)
+            except Exception as e:
+                print(
+                    f'Fail to convert data to pynwb.base.TimeSeries: {ts_file["filename"]}'
+                )
+                print(e)
+
+    # look for TimeSeries csv files
+    ts_matrix_files = [
+        f
+        for f in recording.metadata["files"]
+        if f.get("nwb_class") == "TimeSeries" and "matrix" in f.get("bonsai_type")
+    ]
+
+    if ts_matrix_files:
+        for ts_file in ts_matrix_files:
+            dat = recording.parse_matrix(ts_file)
+
+            # FOR NOW, GET DEFAULT TIME STAMPS FOR BNO55Device FROM quaterion-time_2019-12-05T09_28_34.csv
+            ts
+            try:
+                print(ts_file["filename"])
+
+                ts = TimeSeries(
+                    name=ts_file["filename"],
+                    data=dat,
+                    # timestamps=ts_delta,
+                    description=f'Data parsed from {ts_file["filename"]}',
+                    # comments="Timestamps are in seconds",
+                )
             except Exception as e:
                 print(
                     f'Fail to convert data to pynwb.base.TimeSeries: {ts_file["filename"]}'

@@ -2,7 +2,7 @@ from spikeextractors import RecordingExtractor, BinDatRecordingExtractor
 from bs4 import BeautifulSoup
 from pathlib import Path
 from datetime import datetime
-from numpy import timedelta64
+import numpy as np
 import dateutil.parser as dp
 import lxml
 import csv
@@ -424,29 +424,43 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         file_metadata: a dict in self.metadata['files']
         """
         fp = str(Path(self.bonsai_dir) / file_metadata["filename"])
-
         # col names saved in selector
         if file_metadata["includeheader"]:
-            return read_csv
+            return read_csv(fp)
         else:
             try:
                 return read_csv(fp, names=file_metadata["selector"])
             except:
                 return read_csv(fp, header=None)
 
-        # calculate time series start time and return timestamps
+    def parse_time_series_csv(self, file_metadata, delta=True):
 
+        dat = self.parse_csv(file_metadata)
 
-    def parse_matrix_reader(self, file_metadata):
+    def parse_matrix(self, file_metadata):
         """ 
         Parameters
         ----------
-        file_metadata: dict in self.metadata['files']['matrix']
+        file_metadata: dict in self.metadata['files']
         """
-        fp = str(Path(self.bonsai_dir) / file_metadata["file_name"])
+        fp = str(Path(self.bonsai_dir) / file_metadata["filename"])
 
         # memmap order ‘C’ - row major, ‘F’ - column major
         order = "C" if (file_metadata["layout"] == "RowMajor") else "F"
-        dat = np.memmap(fp, dtype="float32", order=order)
 
-    # def save_data(self)
+        # TODO account for other dtypes
+        if "depth" in file_metadata:
+            if file_metadata["depth"] == "S32":
+                dtype = "int32"
+            else:
+                dtype = "float64"
+
+        try:
+            dat = np.memmap(fp, dtype=dtype, order=order)
+            if "shape" in file_metadata:
+                dat = dat.reshape(tuple(file_metadata["shape"]))
+            return dat
+
+        except Exception as e:
+            print(f"Fail to read data: {fp}")
+            print(e)
