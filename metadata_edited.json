@@ -6,7 +6,7 @@
             "id": 3,
             "name": "DigitalInput32Device",
             "remoteclockhz": "42000000",
-            "type": "other",
+            "type": "other"
         },
         {
             "blocksize": "250",
@@ -18,35 +18,37 @@
             "name": "RHDDevice",
             "samplerate": "SampleRate30000Hz",
             "type": "ephys",
-            "upperbandwidth": "7500",
+            "upperbandwidth": "7500"
         },
         {"id": 5, "name": "BNO055Device", "type": "other"},
         {"blocksize": "5", "id": 6, "name": "LightHouseDevice", "type": "other"},
         {"blocksize": "5", "id": 7, "name": "LightHouseDevice", "type": "other"},
         {"blocksize": "5", "id": 8, "name": "LightHouseDevice", "type": "other"},
-        {"id": 0, "name": "HeartbeatDevice", "type": "other"},
+        {"id": 0, "name": "HeartbeatDevice", "type": "other"}
     ],
     "ephys": {
         "comments": "Generated from BonsaiRecordingExtractor",
         "name": "Electrical Series",
         "sampling_frequency": 30000.0,
-        "starting_time": "2019-12-05 09:28:34.185420-08:00",
+        "starting_time": "2019-12-05 09:28:34.185420-08:00"
     },
     "files": [
         {
             "bonsai_type": "matrixwriter",
+            "dtype": "uint16",
             "ext": "raw",
             "file_pattern": "intan_.raw",
-            "filename": "intan_2019-12-05T09_28_34.raw",
+            "filename": " m",
             "nwb_class": "ElectricalSeries",
             "layout": "ColumnMajor",
             "overwrite": false,
             "prefix": "intan_",
             "suffix": "Timestamp",
-            "nwb_kwargs": {"description": "", "comments": ""},
+            "nwb_kwargs": {"description": "", "comments": ""}
         },
         {
             "bonsai_type": "matrixwriter",
+            "dtype": "float64",
             "ext": "raw",
             "file_pattern": "intan-time_.raw",
             "filename": "intan-time_2019-12-05T09_28_34.raw",
@@ -54,10 +56,11 @@
             "layout": "RowMajor",
             "overwrite": false,
             "prefix": "intan-time_",
-            "suffix": "Timestamp",
+            "suffix": "Timestamp"
         },
         {
             "bonsai_type": "matrixwriter",
+            "dtype": "float64",
             "ext": "raw",
             "file_pattern": "quaterion_.raw",
             "filename": "quaterion_2019-12-05T09_28_34.raw",
@@ -69,11 +72,12 @@
             "shape": [5752, 4],
             "nwb_kwargs": {
                 "description": "Data from quaterion_2019-12-05T09_28_34.raw",
-                "comments": "Raw output from BNO055 Device.  Read using numpy.memmap(dtype='float64, order='C', shape=(5752,4)) ",
-            },
+                "comments": "Raw output from BNO055 Device.  Read using numpy.memmap(dtype='float64, order='C', shape=(5752,4)) "
+            }
         },
         {
             "bonsai_type": "matrixwriter",
+            "dtype": "float64",
             "ext": "raw",
             "file_pattern": "linear-accel_.raw",
             "filename": "linear-accel_2019-12-05T09_28_34.raw",
@@ -82,14 +86,15 @@
             "overwrite": false,
             "prefix": "linear-accel_",
             "suffix": "Timestamp",
-            "shape": [5752, 6],
+            "shape": [5752, 3],
             "nwb_kwargs": {
                 "description": "Data from linear-accel_2019-12-05T09_28_34.raw",
-                "comments": "Raw output from BNO055 Device.  Read using numpy.memmap(dtype='float64, order='C', shape=(5752,4)) ",
-            },
+                "comments": "Raw output from BNO055 Device.  Read using numpy.memmap(dtype='float64, order='C', shape=(5752,4)) "
+            }
         },
         {
             "bonsai_type": "matrixwriter",
+            "dtype": "float64",
             "ext": "raw",
             "file_pattern": "gravity-vector_.raw",
             "filename": "gravity-vector_2019-12-05T09_28_34.raw",
@@ -98,10 +103,11 @@
             "overwrite": false,
             "prefix": "gravity-vector_",
             "suffix": "Timestamp",
-            "shape": [4, 5752],
+            "shape": [5752, 3]
         },
         {
             "bonsai_type": "matrixwriter",
+            "dtype": "float64",
             "ext": "raw",
             "file_pattern": "euler_.raw",
             "filename": "euler_2019-12-05T09_28_34.raw",
@@ -110,13 +116,14 @@
             "overwrite": false,
             "prefix": "euler_",
             "suffix": "Timestamp",
-            "shape": [5753, 3],
+            "shape": [5753, 3]
         },
         {
             "bonsai_type": "matrixreader",
             "bufferlength": "1",
             "channelcount": "64",
             "depth": "S32",
+            "dtype": "int32",
             "filename": "channel-map.raw",
             "nwb_class": "channels",
             "layout": "RowMajor ",
@@ -129,8 +136,8 @@
                 "comments": "",
                 "order": "C",
                 "dtype": "int32",
-                "shape": 64,
-            },
+                "shape": 64
+            }
         },
         {
             "append": false,
@@ -143,7 +150,7 @@
             "overwrite": false,
             "prefix": "intan-first-time_",
             "selector": ["Timestamp"],
-            "suffix": "Timestamp",
+            "suffix": "Timestamp"
         },
         {
             "append": false,
@@ -161,8 +168,8 @@
                 "comments": "Heading in the horizontal plane, derived from quaterion-time_2019-12-05T09_28_34.csv after applying the Heading.py Python script. First row of quaterion-time_2019-12-05T09_28_34.csv is skipped. Read using pandas.read_csv(op.join(DATADIR, 'heading_2019-12-05T09_28_34.csv'), header=None)",
                 "unit": "Radians",
                 "dtype": "float64",
-                "shape": [5751, 1],
-            },
+                "shape": [5751, 1]
+            }
         },
         {
             "append": false,
@@ -175,7 +182,7 @@
             "overwrite": false,
             "prefix": "quaterion-time_",
             "selector": ["Timestamp", "Value"],
-            "suffix": "Timestamp",
+            "suffix": "Timestamp"
         },
         {
             "append": false,
@@ -194,8 +201,8 @@
                 "comments": "",
                 "unit": "Fahrenheit",
                 "names": ["Timestamp", "Temperature"],
-                "dtype": {"Timestamp": "str", "Temperature": "uint16"},
-            },
+                "dtype": {"Timestamp": "str", "Temperature": "uint16"}
+            }
         },
         {
             "append": false,
@@ -214,8 +221,8 @@
                 "comments": "Derived from XXXX",
                 "unit": "XXXXX",
                 "names": ["Timestamp", "Calibration"],
-                "dtype": {"Timestamp": "str", "Calibration": "float64"},
-            },
+                "dtype": {"Timestamp": "str", "Calibration": "float64"}
+            }
         },
         {
             "append": false,
@@ -238,9 +245,9 @@
                     "FrameClock": "str",
                     "FrameTime": "str",
                     "Clock": "str",
-                    "Time": "str",
-                },
-            },
-        },
-    ],
+                    "Time": "str"
+                }
+            }
+        }
+    ]
 }

@@ -314,7 +314,7 @@ def create_nwb(recording, save_path):
             recording.nwb_metadata["NWBFile"] = {
                 "session_description": "no description",
                 "identifier": str(uuid.uuid4()),
-                "session_start_time": recording.session_start_time,
+                "session_start_time": dp.parse(recording.session_start_time),
             }
         nwbfile = NWBFile(**recording.nwb_metadata["NWBFile"])
 

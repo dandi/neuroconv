@@ -187,14 +187,14 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         try:
             dat = parse_csv(file_path)
             if "Timestamp" in file_metadata["selector"] or "Timestamp" in dat.columns:
-                return dp.parse(dat["Timestamp"][0])
+                return str(dp.parse(dat["Timestamp"][0]))
         except:
             # return first time stamp found in file
             with open(file_path) as f:
                 reader = csv.reader(f)
                 for row in reader:
                     for col in row:
-                        return dp.parse(col)
+                        return str(dp.parse(col))
         else:
             raise ValueError(f"Timestamp not found in file: {file_path}")
 
@@ -210,10 +210,10 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         """
         # not initialized
         if time is None:
-            return datetime.now()
+            return str(datetime.now())
 
         try:
-            return dp.parse(time)  # as datetime object
+            return str(dp.parse(time))  # as datetime object
         except:
             fp = str(Path(self.bonsai_dir) / time)  # file path
             return self.get_file_start_time(fp)
@@ -447,7 +447,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
 
         if delta:
             ts_delta = [
-                dp.parse(t) - self.session_start_time for t in dat[timestamp_col]
+                dp.parse(t) - dp.parse(self.session_start_time) for t in dat[timestamp_col]
             ]
             ts_delta = np.array(ts_delta, dtype="timedelta64[ms]") / np.timedelta64(
                 1, "s"
