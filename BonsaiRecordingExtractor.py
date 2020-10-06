@@ -97,7 +97,7 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
             self.numchan = self.get_num_channels()
             self.channel_ids = self.get_channel_ids()
         if traces_dtype is None:
-            self.traces_dtype = "float32"  # self.get_bin_dat_dtype()
+            self.traces_dtype = "uint16"  # self.get_bin_dat_dtype()
         # if self.dtype not in ["uint16", "float32"]:
         #    raise ValueError(
         #        f"dtype {self.dtype} not valid. Choose 'uint16' or 'float32'"
@@ -471,16 +471,18 @@ class BonsaiRecordingExtractor(BinDatRecordingExtractor):
         order = "C" if (file_metadata["layout"] == "RowMajor") else "F"
 
         # TODO account for other dtypes
-        if "depth" in file_metadata:
-            if file_metadata["depth"] == "S32":
-                dtype = "int32"
+        if "dtype" in file_metadata:
+            dtype = file_metadata["dtype"]
         else:
             dtype = "float64"
+        #if "depth" in file_metadata:
+        #    if file_metadata["depth"] == "S32":
+        #        dtype = "int32"
+        #else:
+        #    dtype = "float64"
 
         try:
-            dat = np.memmap(fp, dtype=dtype, order=order)
-            if "shape" in file_metadata:
-                dat = dat.reshape(tuple(file_metadata["shape"]))
+            dat = np.memmap(fp, dtype=dtype, order=order, shape=tuple(file_metadata["shape"]))
             return dat
 
         except Exception as e:
