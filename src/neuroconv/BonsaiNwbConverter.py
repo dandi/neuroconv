@@ -3,8 +3,8 @@ Functions modified from NWBRecordingExtractor from spikeextractors
 
 Example
 -------
-from BonsaiRecordingExtractor import BonsaiRecordingExtractor
-from BonsaiNwbConverter import *
+from neuroconv.BonsaiRecordingExtractor import BonsaiRecordingExtractor
+from neuroconv.BonsaiNwbConverter import *
 
 bonsai_params = {'bonsai_dir': 'data/',
                 'metadata_file': 'aquisition_oni.bonsai',
@@ -16,7 +16,7 @@ create_nwb(rx, 'bonsai.nwb')
 
 """
 
-from BonsaiRecordingExtractor import BonsaiRecordingExtractor
+from neuroconv.BonsaiRecordingExtractor import BonsaiRecordingExtractor
 from spikeextractors import NwbRecordingExtractor
 from spikeextractors.extractors.nwbextractors import *
 

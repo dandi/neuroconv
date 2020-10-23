@@ -1,8 +1,8 @@
 # test script
 # will upload data as datalad directory later
 
-from BonsaiRecordingExtractor import BonsaiRecordingExtractor
-from BonsaiNwbConverter import *
+from ..BonsaiRecordingExtractor import BonsaiRecordingExtractor
+from ..BonsaiNwbConverter import *
 import json
 
 import pynwb
