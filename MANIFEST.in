@@ -1,0 +1,2 @@
+include LICENSE tox.ini versioneer.py
+global-exclude *.py[cod]
